@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RC map way to SRMIST</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- LeafletJS for Maps -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+    <!-- Leaflet Routing Machine for Directions -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+    <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+
+    <!-- Phosphor Icons for UI -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+    <!-- Custom Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        /* Custom styles for a mobile-first, app-like layout */
+        body {
+            font-family: 'Inter', sans-serif;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+            /* Prevent scrolling of the whole page */
+        }
+
+        #map {
+            flex-grow: 1;
+            height: 100%;
+            width: 100%;
+            background-color: #f0f4ff;
+        }
+
+        main {
+            display: flex;
+            flex-direction: column;
+            height: calc(100vh - 6rem);
+            /* Adjust based on new header height */
+        }
+
+        #map-container {
+            height: 60%;
+            width: 100%;
+        }
+
+        #info-panel {
+            height: 40%;
+            width: 100%;
+        }
+
+        .leaflet-routing-container {
+            display: none;
+            /* Hiding the default routing text panel */
+        }
+
+        .leaflet-marker-icon .car-svg {
+            transition: transform 0.5s linear;
+        }
+    </style>
+</head>
+
+<body class="bg-gray-50 text-gray-900">
+
+    <!-- Header -->
+    <header class="bg-white shadow-md w-full p-4 flex items-center justify-between z-10 h-24">
+        <div class="flex items-center space-x-4">
+            <img src="rcmap.png" alt="RCmap Logo" class="h-16">
+            <img src="srmlogo.png" alt="SRM Logo" class="h-16">
+        </div>
+        <button id="share-btn"
+            class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg flex items-center space-x-2 transition-all duration-200 active:scale-95 shadow-md">
+            <i class="ph-fill ph-share-network text-lg"></i>
+            <span class="text-sm">Share</span>
+        </button>
+    </header>
+
+    <!-- Main Content -->
+    <main>
+        <!-- Map Container -->
+        <div id="map-container" class="relative">
+            <div id="map"></div>
+            <div id="loading-overlay"
+                class="absolute inset-0 bg-white/80 backdrop-blur-sm flex flex-col items-center justify-center z-[1000]">
+                <svg class="w-16 h-16 text-indigo-600 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none"
+                    viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+                    </path>
+                </svg>
+                <p class="text-gray-700 font-semibold mt-4">Getting your location...</p>
+                <p class="text-gray-500 text-sm">Please allow location access.</p>
+            </div>
+        </div>
+
+        <!-- Information Panel -->
+        <div id="info-panel" class="p-4 bg-white overflow-y-auto border-t border-gray-200">
+            <h2 class="text-lg font-bold text-indigo-700 mb-4 border-b border-gray-200 pb-2">Transportation Options</h2>
+            <div id="transport-options" class="space-y-4">
+                <!-- Transport options will be dynamically inserted here -->
+            </div>
+        </div>
+    </main>
+
+    <!-- Share Modal -->
+    <div id="share-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold text-gray-900">Share Your Location</h3>
+                <button id="close-modal-btn"
+                    class="text-gray-400 hover:text-gray-600 text-2xl font-bold">&times;</button>
+            </div>
+            <p class="text-sm text-gray-600 mt-2 mb-4">Anyone with this link can see your live location on the map.</p>
+            <input type="text" id="share-link-input" readonly
+                class="w-full bg-gray-100 border border-gray-300 rounded-md p-2 text-center text-sm text-gray-800">
+            <div class="mt-4">
+                <button id="copy-link-btn"
+                    class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg transition-all duration-200">Copy
+                    Link</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            // --- 1. CONFIGURATION & CONSTANTS ---
+            const AIRPORT_COORDS = [12.9941, 80.1709];
+            const SRM_KTR_COORDS = [12.8232, 80.0444];
+            const MAP_CENTER = [12.90865, 80.10765];
+
+            const transportData = [
+                {
+                    mode: 'Cab (Uber/Ola)',
+                    icon: 'car-profile',
+                    price: '₹700 - ₹1200',
+                    time: '~ 1 - 1.5 hours',
+                    description: 'Comfortable and direct. Best for those with luggage. Click to book on the Uber website.',
+                    link: `https://m.uber.com/ul/?action=setPickup&pickup[latitude]=${AIRPORT_COORDS[0]}&pickup[longitude]=${AIRPORT_COORDS[1]}&drop[latitude]=${SRM_KTR_COORDS[0]}&drop[longitude]=${SRM_KTR_COORDS[1]}`
+                },
+                {
+                    mode: 'Train',
+                    icon: 'train',
+                    price: '₹10 - ₹20',
+                    time: '~ 1.5 hours total',
+                    description: 'Most economical. Walk to Tirusulam station (opposite airport), take a train towards Chengalpattu, and get down at Potheri station.',
+                    link: 'https://trackmytrain.co.in/'
+                },
+                {
+                    mode: 'Auto Rickshaw',
+                    icon: 'jeep',
+                    price: '₹800 - ₹1500',
+                    time: '~ 1.5 hours',
+                    description: 'Available at the airport. Use pre-paid counters or negotiate fare before starting.'
+                },
+                {
+                    mode: 'Bike Taxi (Rapido)',
+                    icon: 'motorcycle',
+                    price: '₹400 - ₹600',
+                    time: '~ 1 hour',
+                    description: 'Fast and cheap for single travelers with light luggage. Click to book via the Rapido website.',
+                    link: 'https://m.rapido.bike/'
+                }
+            ];
+
+            // --- 2. MAP INITIALIZATION ---
+            const map = L.map('map').setView(MAP_CENTER, 12);
+            map.attributionControl.setPrefix(false); // Hide the Leaflet prefix
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '; <a href="">RC MAP Way to SRMIST</a>  | ; RAHUL CHAUBE'
+            }).addTo(map);
+
+            // --- 3. UI REFERENCES ---
+            const transportContainer = document.getElementById('transport-options');
+            const loadingOverlay = document.getElementById('loading-overlay');
+            const shareBtn = document.getElementById('share-btn');
+            const shareModal = document.getElementById('share-modal');
+            const closeModalBtn = document.getElementById('close-modal-btn');
+            const copyLinkBtn = document.getElementById('copy-link-btn');
+            const shareLinkInput = document.getElementById('share-link-input');
+
+            let userMarker, userAccuracyCircle;
+
+            // --- 4. RENDER DYNAMIC CONTENT ---
+            function renderTransportOptions() {
+                transportContainer.innerHTML = transportData.map(option => {
+                    const cardContent = `
+                        <div class="border border-gray-200 rounded-lg p-4 bg-white shadow-sm transition-all duration-300 hover:shadow-lg hover:border-indigo-500 hover:scale-[1.02] cursor-pointer h-full flex flex-col justify-between">
+                           <div>
+                                <div class="flex items-center justify-between">
+                                    <div class="flex items-center space-x-3">
+                                        <i class="ph-fill ph-${option.icon} text-2xl text-indigo-600"></i>
+                                        <h3 class="font-semibold text-gray-800">${option.mode}</h3>
+                                    </div>
+                                    <div class="text-right">
+                                        <p class="font-bold text-indigo-600">${option.price}</p>
+                                        <p class="text-sm text-gray-500">${option.time}</p>
+                                    </div>
+                                </div>
+                                <p class="text-sm text-gray-600 mt-2">${option.description}</p>
+                           </div>
+                            ${option.link ? `
+                           <div class="text-right text-indigo-600 text-xs font-semibold mt-3 flex items-center justify-end gap-1">
+                                <span>Book / Track Online</span>
+                                <i class="ph ph-arrow-square-out"></i>
+                           </div>` : ''}
+                        </div>
+                    `;
+                    return option.link ? `<a href="${option.link}" target="_blank" rel="noopener noreferrer" class="block">${cardContent}</a>` : cardContent;
+                }).join('');
+            }
+
+
+            // --- 5. MAP MARKERS AND ROUTING ---
+            const airportIcon = L.divIcon({ html: '<i class="ph-fill ph-airplane-takeoff text-4xl text-red-500 drop-shadow-lg"></i>', className: '', iconSize: [32, 32], iconAnchor: [16, 32] });
+            const universityIcon = L.divIcon({ html: '<i class="ph-fill ph-student text-4xl text-green-600 drop-shadow-lg"></i>', className: '', iconSize: [32, 32], iconAnchor: [16, 32] });
+
+            L.marker(AIRPORT_COORDS, { icon: airportIcon }).addTo(map).bindPopup('<b>Chennai International Airport (MAA)</b>');
+            L.marker(SRM_KTR_COORDS, { icon: universityIcon }).addTo(map).bindPopup('<b>SRM University, KTR Campus</b>');
+
+            L.Routing.control({
+                waypoints: [L.latLng(AIRPORT_COORDS), L.latLng(SRM_KTR_COORDS)],
+                routeWhileDragging: false, draggableWaypoints: false, addWaypoints: false,
+                lineOptions: { styles: [{ color: '#4f46e5', opacity: 0.9, weight: 7 }] },
+                createMarker: () => null
+            }).addTo(map);
+
+            const userCarIconHTML = `
+                <div class="relative flex items-center justify-center">
+                    <svg class="car-svg drop-shadow-lg" width="36" height="36" viewBox="0 0 24 24" fill="#4f46e5" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-1h12v1a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-8l-2.08-5.99zM6.5 16a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm11 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zM5 11l1.5-4.5h11L19 11H5z"/>
+                    </svg>
+                    <div class="absolute w-10 h-10 bg-indigo-400/50 rounded-full animate-ping -z-10"></div>
+                </div>`;
+            const userCarIcon = L.divIcon({ html: userCarIconHTML, className: '', iconSize: [36, 36], iconAnchor: [18, 18] });
+
+            // --- 6. GEOLOCATION LOGIC ---
+            function onLocationFound(e) {
+                loadingOverlay.style.display = 'none';
+                const radius = e.accuracy;
+                const speedKmh = e.speed ? (e.speed * 3.6).toFixed(1) : 'N/A';
+                const popupContent = `<b>You are here!</b><br>Speed: ${speedKmh} km/h`;
+
+                if (!userMarker) {
+                    userMarker = L.marker(e.latlng, { icon: userCarIcon }).addTo(map).bindPopup(popupContent).openPopup();
+                    userAccuracyCircle = L.circle(e.latlng, { radius: radius, color: '#4f46e5', weight: 2, fillColor: '#818cf8', fillOpacity: 0.2 }).addTo(map);
+                } else {
+                    userMarker.setLatLng(e.latlng).getPopup().setContent(popupContent);
+                    userAccuracyCircle.setLatLng(e.latlng).setRadius(radius);
+                }
+
+                const heading = e.heading;
+                if (userMarker && heading !== null && !isNaN(heading)) {
+                    const carSVG = userMarker.getElement().querySelector('.car-svg');
+                    if (carSVG) carSVG.style.transform = `rotate(${heading}deg)`;
+                }
+            }
+
+            function onLocationError(e) {
+                loadingOverlay.innerHTML = `<i class="ph-bold ph-warning text-5xl text-red-500"></i><p class="text-gray-700 font-semibold mt-4">Location Error</p><p class="text-gray-500 text-sm text-center">${e.message}.<br>Please enable location services.</p>`;
+            }
+
+            // --- 7. SHARE FUNCTIONALITY ---
+            function checkSharedLocation() {
+                const urlParams = new URLSearchParams(window.location.search);
+                const lat = urlParams.get('lat'), lon = urlParams.get('lon');
+                if (lat && lon) {
+                    loadingOverlay.style.display = 'none';
+                    const sharedLatLng = [parseFloat(lat), parseFloat(lon)];
+                    const sharedIcon = L.divIcon({ html: '<i class="ph-fill ph-user-focus text-4xl text-blue-500 drop-shadow-lg"></i>', className: '', iconSize: [32, 32], iconAnchor: [16, 32] });
+                    L.marker(sharedLatLng, { icon: sharedIcon }).addTo(map).bindPopup('<b>Shared Location</b>').openPopup();
+                    map.setView(sharedLatLng, 15);
+                    return true;
+                }
+                return false;
+            }
+
+            shareBtn.addEventListener('click', () => {
+                if (userMarker) {
+                    const { lat, lng } = userMarker.getLatLng();
+                    shareLinkInput.value = `${window.location.origin}${window.location.pathname}?lat=${lat}&lon=${lng}`;
+                    shareModal.classList.remove('hidden');
+                } else {
+                    alert('Cannot share location. Please enable location services first.');
+                }
+            });
+
+            closeModalBtn.addEventListener('click', () => shareModal.classList.add('hidden'));
+            copyLinkBtn.addEventListener('click', () => {
+                shareLinkInput.select();
+                document.execCommand('copy');
+                copyLinkBtn.textContent = 'Copied!';
+                setTimeout(() => { copyLinkBtn.textContent = 'Copy Link'; }, 2000);
+            });
+
+            // --- 8. INITIALIZATION ---
+            renderTransportOptions();
+
+            if (!checkSharedLocation()) {
+                map.on('locationfound', onLocationFound);
+                map.on('locationerror', onLocationError);
+                map.locate({ setView: true, maxZoom: 16, watch: true, enableHighAccuracy: true });
+            }
+        });
+    </script>
+</body>
+
+</html>
